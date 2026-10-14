@@ -1,0 +1,7 @@
+insightface
+onnxruntime-gpu      # без видеокарты NVIDIA: onnxruntime и USE_GPU = False в config.py
+opencv-python
+numpy
+fastapi
+uvicorn
+python-multipart     # нужен FastAPI для загрузки файлов

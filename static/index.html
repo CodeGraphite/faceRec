@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Учёт студентов</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Vue подключаем прямо с CDN — без Node.js и сборки -->
+  <script src="https://unpkg.com/vue@3.4.38/dist/vue.global.prod.js"></script>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <b>Учёт студентов</b>
+    <nav>
+      <button :class="{ active: page === 'dashboard' }" @click="page = 'dashboard'">Дашборд</button>
+      <button :class="{ active: page === 'students' || page === 'student' }" @click="openStudentsList">Студенты</button>
+    </nav>
+    <span class="camera" :class="camera.error ? 'bad' : 'ok'">
+      Камера: {{ camera.error || (camera.running ? 'работает' : 'запускается...') }}
+    </span>
+  </header>
+
+  <main>
+    <!-- ===================== ДАШБОРД ===================== -->
+    <section v-if="page === 'dashboard'">
+      <div class="cards">
+        <div class="card"><div class="label">Сейчас в университете</div><div class="number">{{ stats.inside }}</div></div>
+        <div class="card"><div class="label">Вне университета</div><div class="number">{{ stats.outside }}</div></div>
+        <div class="card"><div class="label">Пришли сегодня</div><div class="number">{{ stats.came_today }}</div></div>
+        <div class="card"><div class="label">Всего студентов</div><div class="number">{{ stats.total }}</div></div>
+      </div>
+
+      <div class="two-columns">
+        <div class="box">
+          <h2>Камера на входе</h2>
+          <!-- Сервер присылает поток картинок, браузер показывает его как видео -->
+          <img class="video" src="/api/camera/stream" alt="Видео с камеры">
+          <p class="muted">Последний узнанный: {{ camera.last_recognized || '—' }}</p>
+        </div>
+
+        <div class="box">
+          <div class="row">
+            <h2>Последние проходы</h2>
+            <button @click="resetAll">Все ушли</button>
+          </div>
+          <table>
+            <tr><th>Время</th><th>Студент</th><th>Действие</th></tr>
+            <tr v-for="e in events" :key="e.id">
+              <td>{{ e.time.slice(11) }}</td>
+              <td><a href="#" @click.prevent="openStudent(e.student_id)">{{ e.full_name }}</a></td>
+              <td><span :class="e.action === 'in' ? 'tag green' : 'tag gray'">{{ e.action === 'in' ? 'Вошёл' : 'Вышел' }}</span></td>
+            </tr>
+            <tr v-if="events.length === 0"><td colspan="3" class="muted">Пока никто не проходил</td></tr>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== СПИСОК СТУДЕНТОВ ===================== -->
+    <section v-if="page === 'students'">
+      <div class="box">
+        <h2>Добавить студента</h2>
+        <form class="row left" @submit.prevent="addStudent">
+          <input v-model="newStudent.full_name" placeholder="ФИО" required>
+          <input v-model="newStudent.group_name" placeholder="Группа">
+          <button class="primary">Добавить</button>
+        </form>
+      </div>
+
+      <div class="box">
+        <h2>Студенты ({{ students.length }})</h2>
+        <table>
+          <tr><th>ФИО</th><th>Группа</th><th>Статус</th><th>Фото</th></tr>
+          <tr v-for="s in students" :key="s.id">
+            <td><a href="#" @click.prevent="openStudent(s.id)">{{ s.full_name }}</a></td>
+            <td>{{ s.group_name }}</td>
+            <td><span :class="s.status === 'inside' ? 'tag green' : 'tag gray'">{{ s.status === 'inside' ? 'В Универе' : 'Вне Универа' }}</span></td>
+            <td>
+              <span v-if="s.photos_count > 0">{{ s.photos_count }} шт.</span>
+              <span v-else class="tag red">нет фото</span>
+            </td>
+          </tr>
+          <tr v-if="students.length === 0"><td colspan="4" class="muted">Добавьте первого студента</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===================== КАРТОЧКА СТУДЕНТА ===================== -->
+    <section v-if="page === 'student' && student">
+      <div class="row">
+        <button @click="openStudentsList">← К списку</button>
+        <button class="danger" @click="deleteStudent">Удалить студента</button>
+      </div>
+
+      <div class="two-columns">
+        <div class="box">
+          <h2>Данные</h2>
+          <form @submit.prevent="saveStudent">
+            <label>ФИО <input v-model="student.full_name" required></label>
+            <label>Группа <input v-model="student.group_name"></label>
+            <button class="primary">Сохранить</button>
+          </form>
+        </div>
+
+        <div class="box">
+          <h2>Статус</h2>
+          <p>
+            <span :class="student.status === 'inside' ? 'tag green' : 'tag gray'">{{ student.status === 'inside' ? 'В Универе' : 'Вне Универа' }}</span>
+          </p>
+          <p class="muted">Последний раз: {{ student.last_seen || '—' }}</p>
+          <button @click="toggleStudent">Отметить вход/выход вручную</button>
+        </div>
+      </div>
+
+      <div class="box">
+        <div class="row">
+          <h2>Фото лица ({{ student.photos.length }})</h2>
+          <div class="row left">
+            <label class="button">Загрузить фото
+              <input type="file" accept="image/*" hidden @change="uploadPhoto">
+            </label>
+            <button @click="photoFromCamera">Сделать фото с камеры</button>
+          </div>
+        </div>
+        <p class="muted">2–3 фото с разных ракурсов, одно лицо на фото, хорошее освещение.</p>
+        <div class="photos">
+          <div class="photo" v-for="p in student.photos" :key="p.id">
+            <img :src="'/photos/' + p.photo_file">
+            <button class="danger" @click="deletePhoto(p)">Удалить</button>
+          </div>
+          <span v-if="student.photos.length === 0" class="tag red">Нет фото — студент не будет распознаваться</span>
+        </div>
+      </div>
+
+      <div class="box">
+        <h2>История проходов</h2>
+        <table>
+          <tr><th>Время</th><th>Действие</th><th>Похожесть</th></tr>
+          <tr v-for="e in student.events" :key="e.id">
+            <td>{{ e.time }}</td>
+            <td><span :class="e.action === 'in' ? 'tag green' : 'tag gray'">{{ e.action === 'in' ? 'Вошёл' : 'Вышел' }}</span></td>
+            <td>{{ e.similarity ? e.similarity.toFixed(2) : 'вручную' }}</td>
+          </tr>
+          <tr v-if="student.events.length === 0"><td colspan="3" class="muted">Проходов ещё не было</td></tr>
+        </table>
+      </div>
+    </section>
+
+    <div v-if="message" class="message" :class="{ error: messageIsError }">{{ message }}</div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
